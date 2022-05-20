@@ -860,10 +860,10 @@ static ssize_t set_dev_class(struct device *dev,
 		/* SFP family */
 		/* if it doesn't exist, create 0x51 i2c address */
 		if (!optoe->client[1]) {
-			optoe->client[1] = i2c_new_dummy(client->adapter, 0x51);
+			optoe->client[1] = i2c_new_dummy(client->adapter, client->addr + 0x1);
 			if (!optoe->client[1]) {
 				dev_err(&client->dev,
-					"address 0x51 unavailable\n");
+					"address 0x%02x unavailable\n", client->addr + 0x1);
 				mutex_unlock(&optoe->lock);
 				return -EADDRINUSE;
 			}
@@ -952,7 +952,7 @@ static int optoe_probe(struct i2c_client *client,
 	int num_addresses = 0;
 	char port_name[MAX_PORT_NAME_LEN];
 
-	if (client->addr != 0x50) {
+	if (client->addr != 0x50 && client->addr != 0x58) {
 		dev_dbg(&client->dev, "probe, bad i2c addr: 0x%x\n",
 				      client->addr);
 		err = -EINVAL;
@@ -1095,9 +1095,9 @@ static int optoe_probe(struct i2c_client *client,
 
 	/* SFF-8472 spec requires that the second I2C address be 0x51 */
 	if (num_addresses == 2) {
-		optoe->client[1] = i2c_new_dummy(client->adapter, 0x51);
+		optoe->client[1] = i2c_new_dummy(client->adapter, client->addr + 0x1);
 		if (!optoe->client[1]) {
-			dev_err(&client->dev, "address 0x51 unavailable\n");
+			dev_err(&client->dev, "address 0x%02x unavailable\n", client->addr + 0x1);
 			err = -EADDRINUSE;
 			goto err_struct;
 		}
