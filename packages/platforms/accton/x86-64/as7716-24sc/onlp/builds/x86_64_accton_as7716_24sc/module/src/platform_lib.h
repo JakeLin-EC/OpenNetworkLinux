@@ -70,7 +70,8 @@ enum onlp_thermal_id
 typedef enum psu_type {
     PSU_TYPE_UNKNOWN,
     PSU_TYPE_AC_DPS850_F2B,
-    PSU_TYPE_AC_DPS850_B2F
+    PSU_TYPE_AC_DPS850_B2F,
+    PSU_TYPE_DC_R1CD2122A
 } psu_type_t;
 
 typedef enum port_type {
