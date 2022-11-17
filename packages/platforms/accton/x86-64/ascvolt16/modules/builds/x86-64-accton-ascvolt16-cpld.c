@@ -25,6 +25,7 @@
 #include <linux/module.h>
 #include <linux/jiffies.h>
 #include <linux/i2c.h>
+#include <linux/pci.h>
 #include <linux/hwmon.h>
 #include <linux/hwmon-sysfs.h>
 #include <linux/err.h>
@@ -37,7 +38,7 @@
 #define DRVNAME "ascvolt16_cpld"
 
 static LIST_HEAD(cpld_client_list);
-static struct mutex	 list_lock;
+static struct mutex list_lock;
 
 struct cpld_client_node {
 	struct i2c_client *client;
@@ -64,14 +65,6 @@ static ssize_t set_gpon_type(struct device *dev, struct device_attribute *da,
 			const char *buf, size_t count);
 static ssize_t set_control(struct device *dev, struct device_attribute *da,
 			const char *buf, size_t count);
-static ssize_t show_pon_port_act_led(struct device *dev, struct device_attribute *da,
-             char *buf);
-static ssize_t set_pon_port_act_led(struct device *dev, struct device_attribute *da,
-			const char *buf, size_t count);
-static ssize_t show_pon_port_link_led(struct device *dev, struct device_attribute *da,
-             char *buf);
-static ssize_t set_pon_port_link_led(struct device *dev, struct device_attribute *da,
-			const char *buf, size_t count);
 static ssize_t access(struct device *dev, struct device_attribute *da,
 			const char *buf, size_t count);
 static ssize_t show_version(struct device *dev, struct device_attribute *da,
@@ -96,8 +89,6 @@ static const unsigned short normal_i2c[] = { I2C_CLIENT_END };
 #define TRANSCEIVER_TXFAULT_ATTR_ID(index) MODULE_TXFAULT_##index
 #define TRANSCEIVER_RXLOS_ATTR_ID(index) MODULE_RXLOS_##index
 #define TRANSCEIVER_GPONTYPE_ATTR_ID(index) MODULE_GPONTYPE_##index
-#define PON_PORT_ACT_LED_ATTR_ID(index)         PON_PORT_ACT_LED_##index
-#define PON_PORT_LINK_LED_ATTR_ID(index)        PON_PORT_LINK_LED_##index
 
 enum ascvolt16_cpld_sysfs_attributes {
 	/* transceiver attributes */
@@ -213,39 +204,6 @@ enum ascvolt16_cpld_sysfs_attributes {
 	TRANSCEIVER_GPONTYPE_ATTR_ID(25),
 	TRANSCEIVER_GPONTYPE_ATTR_ID(26),
 
-	PON_PORT_ACT_LED_ATTR_ID(11),
-	PON_PORT_ACT_LED_ATTR_ID(12),
-	PON_PORT_ACT_LED_ATTR_ID(13),
-	PON_PORT_ACT_LED_ATTR_ID(14),
-	PON_PORT_ACT_LED_ATTR_ID(15),
-	PON_PORT_ACT_LED_ATTR_ID(16),
-	PON_PORT_ACT_LED_ATTR_ID(17),
-	PON_PORT_ACT_LED_ATTR_ID(18),
-	PON_PORT_ACT_LED_ATTR_ID(19),
-	PON_PORT_ACT_LED_ATTR_ID(20),
-	PON_PORT_ACT_LED_ATTR_ID(21),
-	PON_PORT_ACT_LED_ATTR_ID(22),
-	PON_PORT_ACT_LED_ATTR_ID(23),
-	PON_PORT_ACT_LED_ATTR_ID(24),
-	PON_PORT_ACT_LED_ATTR_ID(25),
-	PON_PORT_ACT_LED_ATTR_ID(26),
-
-	PON_PORT_LINK_LED_ATTR_ID(11),
-	PON_PORT_LINK_LED_ATTR_ID(12),
-	PON_PORT_LINK_LED_ATTR_ID(13),
-	PON_PORT_LINK_LED_ATTR_ID(14),
-	PON_PORT_LINK_LED_ATTR_ID(15),
-	PON_PORT_LINK_LED_ATTR_ID(16),
-	PON_PORT_LINK_LED_ATTR_ID(17),
-	PON_PORT_LINK_LED_ATTR_ID(18),
-	PON_PORT_LINK_LED_ATTR_ID(19),
-	PON_PORT_LINK_LED_ATTR_ID(20),
-	PON_PORT_LINK_LED_ATTR_ID(21),
-	PON_PORT_LINK_LED_ATTR_ID(22),
-	PON_PORT_LINK_LED_ATTR_ID(23),
-	PON_PORT_LINK_LED_ATTR_ID(24),
-	PON_PORT_LINK_LED_ATTR_ID(25),
-	PON_PORT_LINK_LED_ATTR_ID(26),
 	MODULE_PRESENT_ALL,
 	CPLD_VERSION,
 	ACCESS,
@@ -311,14 +269,6 @@ enum ascvolt16_cpld_sysfs_attributes {
 	&sensor_dev_attr_module_tx_fault_##index.dev_attr.attr, \
 	&sensor_dev_attr_module_gpon_type_##index.dev_attr.attr
 
-#define DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(index) \
-    static SENSOR_DEVICE_ATTR(pon_port_act_led_##index, S_IRUGO | S_IWUSR, show_pon_port_act_led, set_pon_port_act_led, PON_PORT_ACT_LED_##index); \
-    static SENSOR_DEVICE_ATTR(pon_port_link_led_##index, S_IRUGO | S_IWUSR, show_pon_port_link_led, set_pon_port_link_led, PON_PORT_LINK_LED_##index);
-
-#define DECLARE_GPON_PORT_LED_ATTR(index)  \
-    &sensor_dev_attr_pon_port_act_led_##index.dev_attr.attr, \
-    &sensor_dev_attr_pon_port_link_led_##index.dev_attr.attr
-
 static SENSOR_DEVICE_ATTR(version, S_IRUGO, show_version, NULL, CPLD_VERSION);
 static SENSOR_DEVICE_ATTR(access, S_IWUSR, NULL, access, ACCESS);
 static SENSOR_DEVICE_ATTR(aspen1_reset, S_IRUGO | S_IWUSR, show_status, set_control, ASPEN1_RESET);
@@ -357,23 +307,6 @@ DECLARE_GPON_TRANSCEIVER_SENSOR_DEVICE_ATTR(24);
 DECLARE_GPON_TRANSCEIVER_SENSOR_DEVICE_ATTR(25);
 DECLARE_GPON_TRANSCEIVER_SENSOR_DEVICE_ATTR(26);
 
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(11);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(12);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(13);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(14);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(15);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(16);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(17);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(18);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(19);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(20);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(21);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(22);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(23);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(24);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(25);
-DECLARE_GPON_PORT_LED_SENSOR_DEVICE_ATTR(26);
-
 static struct attribute *ascvolt16_cpld_attributes[] = {
 	/* transceiver attributes */
 	DECLARE_QSFP28_TRANSCEIVER_ATTR(1),
@@ -405,23 +338,6 @@ static struct attribute *ascvolt16_cpld_attributes[] = {
 	DECLARE_GPON_TRANSCEIVER_ATTR(25),
 	DECLARE_GPON_TRANSCEIVER_ATTR(26),
 
-	DECLARE_GPON_PORT_LED_ATTR(11),
-	DECLARE_GPON_PORT_LED_ATTR(12),
-	DECLARE_GPON_PORT_LED_ATTR(13),
-	DECLARE_GPON_PORT_LED_ATTR(14),
-	DECLARE_GPON_PORT_LED_ATTR(15),
-	DECLARE_GPON_PORT_LED_ATTR(16),
-	DECLARE_GPON_PORT_LED_ATTR(17),
-	DECLARE_GPON_PORT_LED_ATTR(18),
-	DECLARE_GPON_PORT_LED_ATTR(19),
-	DECLARE_GPON_PORT_LED_ATTR(20),
-	DECLARE_GPON_PORT_LED_ATTR(21),
-	DECLARE_GPON_PORT_LED_ATTR(22),
-	DECLARE_GPON_PORT_LED_ATTR(23),
-	DECLARE_GPON_PORT_LED_ATTR(24),
-	DECLARE_GPON_PORT_LED_ATTR(25),
-	DECLARE_GPON_PORT_LED_ATTR(26),
-
 	&sensor_dev_attr_module_present_all.dev_attr.attr,
 	&sensor_dev_attr_version.dev_attr.attr,
 	&sensor_dev_attr_access.dev_attr.attr,
@@ -439,68 +355,6 @@ static const struct attribute_group ascvolt16_cpld_group = {
 static const struct attribute_group* cpld_groups[] = {
 	&ascvolt16_cpld_group,
 };
-
-typedef struct port_led_s
-{
-	u8 addr;
-	u8 reg[2]; /*green, red reg*/
-	u8 val[2]; /*green, red reg's val*/
-}port_led_t;
-
-typedef struct pon_link_led_port_map_s
-{
-	int attr_id;
-	u8  reg[2];
-	int mask;
-}pon_link_led_port_map_t;
-
-pon_link_led_port_map_t link_led_map_table[PON_PORT_NUM]={
-	{ PON_PORT_LINK_LED_11, {0x26, 0x28},   0},
-	{ PON_PORT_LINK_LED_12, {0x26, 0x28},   1},
-	{ PON_PORT_LINK_LED_13, {0x26, 0x28},   2},
-	{ PON_PORT_LINK_LED_14, {0x26, 0x28},   3},
-	{ PON_PORT_LINK_LED_15, {0x26, 0x28},   4},
-	{ PON_PORT_LINK_LED_16, {0x26, 0x28},   5},
-	{ PON_PORT_LINK_LED_17, {0x26, 0x28},   6},
-	{ PON_PORT_LINK_LED_18, {0x26, 0x28},   7},
-
-	{ PON_PORT_LINK_LED_19, {0x27, 0x29},   0},
-	{ PON_PORT_LINK_LED_20, {0x27, 0x29},   1},
-	{ PON_PORT_LINK_LED_21, {0x27, 0x29},   2},
-	{ PON_PORT_LINK_LED_22, {0x27, 0x29},   3},
-	{ PON_PORT_LINK_LED_23, {0x27, 0x29},   4},
-	{ PON_PORT_LINK_LED_24, {0x27, 0x29},   5},
-	{ PON_PORT_LINK_LED_25, {0x27, 0x29},   6},
-	{ PON_PORT_LINK_LED_26, {0x27, 0x29},   7},
-};
-
-typedef struct pon_act_led_port_map_s
-{
-	int attr_id;
-	u8  reg;
-	int mask;
-}pon_act_led_port_map_t;
-
-pon_act_led_port_map_t act_led_map_table[PON_PORT_NUM]={
-	{ PON_PORT_ACT_LED_11, 0x2A,  0},
-	{ PON_PORT_ACT_LED_12, 0x2A,  1},
-	{ PON_PORT_ACT_LED_13, 0x2A,  2},
-	{ PON_PORT_ACT_LED_14, 0x2A,  3},
-	{ PON_PORT_ACT_LED_15, 0x2A,  4},
-	{ PON_PORT_ACT_LED_16, 0x2A,  5},
-	{ PON_PORT_ACT_LED_17, 0x2A,  6},
-	{ PON_PORT_ACT_LED_18, 0x2A,  7},
-
-	{ PON_PORT_ACT_LED_19, 0x2B,  0},
-	{ PON_PORT_ACT_LED_20, 0x2B,  1},
-	{ PON_PORT_ACT_LED_21, 0x2B,  2},
-	{ PON_PORT_ACT_LED_22, 0x2B,  3},
-	{ PON_PORT_ACT_LED_23, 0x2B,  4},
-	{ PON_PORT_ACT_LED_24, 0x2B,  5},
-	{ PON_PORT_ACT_LED_25, 0x2B,  6},
-	{ PON_PORT_ACT_LED_26, 0x2B,  7},
-};
-
 
 int ascvolt16_cpld_read(int bus_num, unsigned short cpld_addr, u8 reg)
 {
@@ -957,212 +811,6 @@ static ssize_t set_gpon_type(struct device *dev, struct device_attribute *da,
 exit:
 	mutex_unlock(&data->update_lock);
 	return status;
-}
-
-static ssize_t show_pon_port_act_led(struct device *dev, struct device_attribute *da,
-			 char *buf)
-{
-	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
-	struct i2c_client *client = to_i2c_client(dev);
-	struct ascvolt16_cpld_data *data = i2c_get_clientdata(client);
-	int status = 0;
-	u8 reg = 0, mask = 0, invert = 1;
-
-	if (attr->index >= PON_PORT_ACT_LED_11 && attr->index <=PON_PORT_ACT_LED_26)
-	{
-		mask=0x1 << act_led_map_table[attr->index - PON_PORT_ACT_LED_11].mask;
-		reg=act_led_map_table[attr->index - PON_PORT_ACT_LED_11].reg;
-	}
-	else
-	   return -ENXIO;
-	   
-	mutex_lock(&data->update_lock);
-	status = ascvolt16_cpld_read(56, 0x60, reg);
-	if (unlikely(status < 0)) {
-		goto exit;
-	}
-	mutex_unlock(&data->update_lock);
-
-	return sprintf(buf, "%d\n", invert ? !(status & mask) : !!(status & mask));
-
-exit:
-	mutex_unlock(&data->update_lock);
-	return status;
-
-}
-
-static ssize_t set_pon_port_act_led(struct device *dev, struct device_attribute *da,
-			const char *buf, size_t count)
-{
-	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
-	struct i2c_client *client = to_i2c_client(dev);
-	struct ascvolt16_cpld_data *data = i2c_get_clientdata(client);
-	long set_led;
-	int status, val;
-	u8 reg = 0, mask = 0;
-
-	status = kstrtol(buf, 10, &set_led);
-	if (status) {
-		return status;
-	}
-	if(set_led)
-		val=1;
-	else
-		val=0;
-		
-	if (attr->index >= PON_PORT_ACT_LED_11 && attr->index <= PON_PORT_ACT_LED_26)
-	{
-		mask=0x1 << act_led_map_table[attr->index - PON_PORT_ACT_LED_11].mask;
-		reg=act_led_map_table[attr->index - PON_PORT_ACT_LED_11].reg;
-	}
-	else
-	   return -ENXIO;
-
-	/* Read current status */
-	mutex_lock(&data->update_lock);
-	status = ascvolt16_cpld_read(56, 0x60, reg);
-	if (unlikely(status < 0)) {
-		goto exit;
-	}
-	/* Update led status */
-	if (val) {
-		status &= ~mask;
-	}
-	else {
-		status |= mask;
-	}
-	status = ascvolt16_cpld_write(56, 0x60, reg, status);
-	if (unlikely(status < 0)) {
-		goto exit;
-	}
-
-	mutex_unlock(&data->update_lock);
-	return count;
-
-exit:
-	mutex_unlock(&data->update_lock);
-	return status;
-
-}
-
-static ssize_t show_pon_port_link_led(struct device *dev, struct device_attribute *da,
-			 char *buf)
-{
-	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
-	struct i2c_client *client = to_i2c_client(dev);
-	struct ascvolt16_cpld_data *data = i2c_get_clientdata(client);
-	int status = 0, ouput=0, i=0;
-	u8 mask = 0;
-	port_led_t led_table;
-	
-	memset(&led_table, 0x0, sizeof(led_table));
-	if (attr->index >= PON_PORT_LINK_LED_11 && attr->index <= PON_PORT_LINK_LED_26)
-	{
-		mask=0x1 << link_led_map_table[attr->index - PON_PORT_LINK_LED_11].mask;
-		for(i=0; i<2; i++)
-		{
-			led_table.reg[i]=link_led_map_table[attr->index - PON_PORT_LINK_LED_11].reg[i];
-	}
-	}
-	else
-	   return -ENXIO;
-		
-	/*Because green, red are belong to different reg.
-	 *So set one led color to on, set the other one to off.
-	 *Or set two to off.
-	 *
-	 */
-	for (i=0; i<2; i++) {
-		/* Read current status */
-		mutex_lock(&data->update_lock);
-		status = ascvolt16_cpld_read(56, 0x60, led_table.reg[i]);
-		if (unlikely(status < 0)) {
-			goto exit;
-		}
-		led_table.val[i]= !(status & mask);
-		mutex_unlock(&data->update_lock);
-		if(led_table.val[i])
-		{
-			ouput=i+1;
-			break;
-		}
-	}
-
-	return sprintf(buf, "%d\n", ouput);
-
-exit:
-	mutex_unlock(&data->update_lock);
-	return status;
-}
-
-
-/* color : 0: off
- * 1: green, 2: red
- */
-static ssize_t set_pon_port_link_led(struct device *dev, struct device_attribute *da,
-			const char *buf, size_t count)
-{
-	struct sensor_device_attribute *attr = to_sensor_dev_attr(da);
-	struct i2c_client *client = to_i2c_client(dev);
-	struct ascvolt16_cpld_data *data = i2c_get_clientdata(client);
-	long set_led;
-	int status,i;
-	port_led_t led_table;
-	u8 mask=0;
-	
-	status = kstrtol(buf, 10, &set_led);
-	if (status) {
-		return status;
-	}
-	memset(&led_table, 0x0, sizeof(led_table));
-	
-	if (attr->index >= PON_PORT_LINK_LED_11 && attr->index <= PON_PORT_LINK_LED_26)
-	{
-		mask=0x1 << link_led_map_table[attr->index - PON_PORT_LINK_LED_11].mask;
-		for(i=0; i<2; i++)
-		{
-			led_table.reg[i]=link_led_map_table[attr->index - PON_PORT_LINK_LED_11].reg[i];
-		}
-		if (set_led==1)		
-			led_table.val[0] = 1;
-		else if (set_led==2)
-			led_table.val[1] = 1;
-		else
-			led_table.val[1]=led_table.val[0] = 0;
-	}
-	else
-	   return -ENXIO;
-
-	/*Because green, red are belong to different reg.
-	 *So set one led color to on, set the other one to off.
-	 *Or set two to off.
-	 *
-	 */
-	for(i=0; i<2; i++)
-	{
-		/* Read current status */
-		mutex_lock(&data->update_lock);
-		status = ascvolt16_cpld_read(56, 0x60, led_table.reg[i]);
-		if (unlikely(status < 0)) {
-			goto exit;
-		}
-		if (led_table.val[i]==1)
-			status &= ~mask;
-		else
-			status |= mask;
-		status = ascvolt16_cpld_write(56, 0x60, led_table.reg[i], status);
-		if (unlikely(status < 0)) {
-			goto exit;
-		}
-		mutex_unlock(&data->update_lock);
-	}
-	
-	return count;
-
-exit:
-	mutex_unlock(&data->update_lock);
-	return status;
-
 }
 
 static void ascvolt16_cpld_add_client(struct i2c_client *client)
